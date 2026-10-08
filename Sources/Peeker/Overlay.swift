@@ -53,12 +53,8 @@ final class CreepView: NSView {
         for h in director.handprints {
             CreepArt.drawHandprint(h, in: ctx, now: now)
         }
-        let mouse = window.map { NSEvent.mouseLocation.applying(.init(translationX: -$0.frame.minX, y: -$0.frame.minY)) }
-        for c in director.creeps {
-            CreepArt.draw(c, in: ctx, size: bounds.size, lookAt: mouse)
-        }
-        if let f = director.flash {
-            CreepArt.draw(f, in: ctx, size: bounds.size, lookAt: nil)
+        for c in director.creeps + [director.flash].compactMap({ $0 }) {
+            CreepArt.draw(c, in: ctx, size: bounds.size, viewer: director.viewer, depth: director.viewerDepth)
         }
         if let hud {
             hud.draw(in: ctx, bounds: bounds)

@@ -22,7 +22,6 @@ final class Creep {
     var speedOut: CGFloat = 14
 
     var lid: CGFloat = 0
-    var staring = false
     var neverBlinks = false
     private var blinkStart = -10.0
     private var nextBlink: Double
@@ -47,6 +46,17 @@ final class Creep {
         case .left: return (CGPoint(x: 0, y: along * size.height), -.pi / 2, r)
         case .right: return (CGPoint(x: size.width, y: along * size.height), .pi / 2, r)
         }
+    }
+
+    /// Creep along the edge towards where you are, trying to get into your line of sight.
+    func edgeTowards(_ viewer: CGPoint?, in size: CGSize, dt: Double) {
+        guard let viewer, size.width > 0, size.height > 0 else { return }
+        let target: CGFloat
+        switch edge {
+        case .top, .bottom: target = viewer.x / size.width
+        case .left, .right: target = viewer.y / size.height
+        }
+        along += (min(0.85, max(0.15, target)) - along) * (1 - exp(-0.12 * CGFloat(dt)))
     }
 
     func step(dt: Double, now: Double) {
@@ -92,6 +102,9 @@ final class Director {
     private(set) var flash: Creep?
     private(set) var mode: Mode = .idle
     var canvas: CGSize = .zero
+    /// Your head, projected onto the screen. He looks here, and edges towards it.
+    private(set) var viewer: CGPoint?
+    var viewerDepth: CGFloat { canvas.width * 0.45 }
     var suspended = false
     var onStatsChanged: (() -> Void)?
 
@@ -114,6 +127,12 @@ final class Director {
     }
 
     func ingest(_ s: GazeSample, now: Double) {
+        if let f = s.faceCenter, canvas.width > 0 {
+            // The camera sits top-centre and doesn't mirror, so you moving right shows up as image-left.
+            let target = CGPoint(x: canvas.width * (0.5 + (0.5 - f.x) * 1.2),
+                                 y: canvas.height * (0.65 + (f.y - 0.5) * 0.8))
+            viewer = viewer.map { CGPoint(x: $0.x + (target.x - $0.x) * 0.3, y: $0.y + (target.y - $0.y) * 0.3) } ?? target
+        }
         guard !suspended else { return }
         if s.lookingAway { awayDirection = s.awayDirection }
         if s.lookingAway != lookingAway {
@@ -191,7 +210,6 @@ final class Director {
             c.targetFingers = 1
             c.grin = 1
             c.targetGrin = 1
-            c.staring = true
             c.neverBlinks = true
             flash = c
             lastFlash = now
@@ -215,6 +233,7 @@ final class Director {
             let b = min(1, (now - since) / boldness.growthTime)
             let eased = CGFloat(b * b * (3 - 2 * b))
             for c in creeps {
+                c.edgeTowards(viewer, in: canvas, dt: dt)
                 // 1.45 is just the eyes over the edge; 2.8 is the whole face and a bit of neck.
                 c.targetReveal = 1.45 + eased * 1.35
                 c.targetFingers = b > 0.18 ? 1 : 0

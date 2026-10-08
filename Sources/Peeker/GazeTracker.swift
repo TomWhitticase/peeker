@@ -7,6 +7,8 @@ enum AwayDirection: String {
 
 struct GazeSample {
     var facePresent = false
+    /// Middle of your face in the camera image (Vision's normalised, bottom-left origin).
+    var faceCenter: CGPoint?
     /// Vision's head yaw, only used as a backstop for big turns.
     var yaw = 0.0
     var pitch = 0.0
@@ -124,6 +126,7 @@ final class GazeTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         s.facePresent = face.map { $0.boundingBox.width > 0.06 } ?? false
 
         if let face, s.facePresent {
+            s.faceCenter = CGPoint(x: face.boundingBox.midX, y: face.boundingBox.midY)
             let newYaw = face.yaw?.doubleValue ?? yaw
             let newPitch = face.pitch?.doubleValue ?? pitch
             yaw = hasSignal ? yaw + (newYaw - yaw) * 0.4 : newYaw

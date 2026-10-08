@@ -52,7 +52,8 @@ enum CreepArt {
     private static let eyeLift: CGFloat = 0.12
     private static let eyeSpread: CGFloat = 0.36
 
-    static func draw(_ c: Creep, in ctx: CGContext, size: CGSize, lookAt: CGPoint?) {
+    /// `viewer` is where your head is, projected onto the screen; `depth` is how far in front of it you sit.
+    static func draw(_ c: Creep, in ctx: CGContext, size: CGSize, viewer: CGPoint?, depth: CGFloat) {
         guard c.reveal > 0.002 || c.fingers > 0.002 else { return }
         let g = c.geometry(in: size)
         let cy = c.reveal - headRY
@@ -70,9 +71,11 @@ enum CreepArt {
         ctx.saveGState()
         ctx.rotate(by: c.tilt)
         let pupils = [CGFloat(-1), 1].map { side in
-            pupilOffset(eye: CGPoint(x: side * eyeSpread, y: cy + eyeLift), creep: c, geometry: g, lookAt: lookAt)
+            towardViewer(from: CGPoint(x: side * eyeSpread, y: cy + eyeLift), creep: c, geometry: g, viewer: viewer, depth: depth)
         }
-        drawHead(c, ctx, cy: cy, pupils: pupils)
+        let facing = towardViewer(from: CGPoint(x: 0, y: cy), creep: c, geometry: g, viewer: viewer, depth: depth)
+        drawHead(c, ctx, cy: cy, pupils: pupils.map { CGPoint(x: $0.x * 0.13, y: $0.y * 0.08) },
+                 turn: CGPoint(x: facing.x * 0.16, y: facing.y * 0.08))
         ctx.restoreGState()
 
         drawHands(c, ctx)
@@ -89,20 +92,22 @@ enum CreepArt {
         ctx.restoreGState()
     }
 
-    /// Where the iris sits so he's looking at `lookAt` (or straight at you if staring).
-    private static func pupilOffset(eye: CGPoint, creep c: Creep, geometry g: (anchor: CGPoint, angle: CGFloat, radius: CGFloat), lookAt: CGPoint?) -> CGPoint {
-        guard let lookAt, !c.staring else { return .zero }
+    /// Direction from a point on his face out to your head, in his own (tilted) frame.
+    /// Only the on-screen part is returned: (0, 0) means you're dead ahead, and it
+    /// grows towards 1 the further off to the side you are. That's what makes it eye contact
+    /// rather than "looking at something on the screen".
+    private static func towardViewer(from point: CGPoint, creep c: Creep, geometry g: (anchor: CGPoint, angle: CGFloat, radius: CGFloat),
+                                     viewer: CGPoint?, depth: CGFloat) -> CGPoint {
+        guard let viewer else { return .zero }
+        let eye = point
         let a = g.angle + c.tilt
         let world = CGPoint(
             x: g.anchor.x + (eye.x * cos(a) - eye.y * sin(a)) * g.radius,
             y: g.anchor.y + (eye.x * sin(a) + eye.y * cos(a)) * g.radius
         )
-        let dx = lookAt.x - world.x, dy = lookAt.y - world.y
-        let len = max(1, hypot(dx, dy))
-        let lx = (dx * cos(-a) - dy * sin(-a)) / len
-        let ly = (dx * sin(-a) + dy * cos(-a)) / len
-        let f = min(1, len / (g.radius * 3))
-        return CGPoint(x: lx * 0.11 * f, y: ly * 0.06 * f)
+        let dx = viewer.x - world.x, dy = viewer.y - world.y
+        let len = max(1, sqrt(dx * dx + dy * dy + depth * depth))
+        return CGPoint(x: (dx * cos(-a) - dy * sin(-a)) / len, y: (dx * sin(-a) + dy * cos(-a)) / len)
     }
 
     /// A soft round blob of `g`, stretched to (sx, sy).
@@ -130,7 +135,8 @@ enum CreepArt {
         return p
     }
 
-    private static func drawHead(_ c: Creep, _ ctx: CGContext, cy: CGFloat, pupils: [CGPoint]) {
+    /// `turn` slides the features across the skull, so his face reads as turned towards you.
+    private static func drawHead(_ c: Creep, _ ctx: CGContext, cy: CGFloat, pupils: [CGPoint], turn: CGPoint) {
         // Neck, shaded like a cylinder, in the shadow of the jaw
         ctx.saveGState()
         ctx.clip(to: CGRect(x: -0.34, y: cy - 3.4, width: 0.68, height: 2.4))
@@ -178,6 +184,7 @@ enum CreepArt {
             ctx.strokePath()
         }
 
+        ctx.translateBy(x: turn.x, y: turn.y)
         // Bone structure: brow ridge and cheekbones catch light, everything under them falls away.
         blob(ctx, lightSoft, at: CGPoint(x: 0, y: cy + 0.44), radius: 0.4, sx: 1.9, sy: 0.35)
         for s: CGFloat in [-1, 1] {
@@ -204,13 +211,15 @@ enum CreepArt {
         blob(ctx, lightSoft, at: CGPoint(x: 0, y: cy - 1.05), radius: 0.22, sx: 1.3, sy: 0.7)
         ctx.restoreGState()
 
+        ctx.saveGState()
+        ctx.translateBy(x: turn.x, y: turn.y)
         // Slightly mismatched eyes: the right one is bigger and sits lower.
         for (i, s) in [CGFloat(-1), 1].enumerated() {
             let e = CGPoint(x: s * eyeSpread, y: cy + eyeLift - (s > 0 ? 0.025 : 0))
             drawEye(ctx, at: e, size: s > 0 ? 1.1 : 1, pupil: pupils[i], lid: c.lid, seed: c.seed, side: s)
         }
-
         drawMouth(c, ctx, cy: cy)
+        ctx.restoreGState()
         drawHair(c, ctx, cy: cy)
     }
 
